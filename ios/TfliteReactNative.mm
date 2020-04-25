@@ -57,11 +57,11 @@ static void LoadLabels(NSString* labels_path,
 RCT_EXPORT_METHOD(loadModel:(NSString *)model_file
                   withLabels:(NSString *)labels_file
                   numThreads:(int)num_threads
+                  outputSize:(int)output_size
                   callback:(RCTResponseSenderBlock)callback)
 {
-  NSString* graph_path = [[NSBundle mainBundle] pathForResource:model_file ofType:nil];
-  model = tflite::FlatBufferModel::BuildFromFile([graph_path UTF8String]);
-  LOG(INFO) << "Loaded model " << graph_path;
+  model = tflite::FlatBufferModel::BuildFromFile([model_file UTF8String]);
+  LOG(INFO) << "Loaded model " << model_file;
   model->error_reporter();
   LOG(INFO) << "resolved reporter";
   
@@ -173,7 +173,12 @@ NSMutableArray* GetTopN(const float* prediction, const unsigned long prediction_
   for (const auto& result : top_results) {
     const float confidence = result.first;
     const int index = result.second;
-    NSString* labelObject = [NSString stringWithUTF8String:labels[index].c_str()];
+    NSString* labelObject;
+    if (index < labels.size()) {
+        labelObject = [NSString stringWithUTF8String:labels[index].c_str()];
+    } else {
+        labelObject = @"unknown";
+    }
     NSNumber* valueObject = [NSNumber numberWithFloat:confidence];
     NSMutableDictionary* res = [NSMutableDictionary dictionary];
     [res setValue:[NSNumber numberWithInt:index] forKey:@"index"];
@@ -211,7 +216,7 @@ RCT_EXPORT_METHOD(runModelOnImage:(NSString*)image_path
   if (output == NULL)
     callback(@[@"No output!"]);
   
-  const unsigned long output_size = labels.size();
+    const unsigned long output_size = 10; // TODO(Harry): Remove parameter
   NSMutableArray* results = GetTopN(output, output_size, num_results, threshold);
   callback(@[[NSNull null], results]);
 }

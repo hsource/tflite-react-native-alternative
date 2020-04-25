@@ -8,6 +8,7 @@ class Tflite {
       args['model'],
       args['labels'] || '',
       args['numThreads'] || 1,
+      args['outputSize'] || 10,
       (error, response) => {
         callback && callback(error, response);
       });

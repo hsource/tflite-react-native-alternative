@@ -77,22 +77,20 @@ public class TfliteReactNativeModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  private void loadModel(final String modelPath, final String labelsPath, final int numThreads, final Callback callback)
+  private void loadModel(final String modelPath, final String labelsPath, final int numThreads, final int outputSize, final Callback callback)
       throws IOException {
-    AssetManager assetManager = reactContext.getAssets();
-    AssetFileDescriptor fileDescriptor = assetManager.openFd(modelPath);
-    FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
+    FileInputStream inputStream = new FileInputStream(modelPath.replace("file://", ""));
     FileChannel fileChannel = inputStream.getChannel();
-    long startOffset = fileDescriptor.getStartOffset();
-    long declaredLength = fileDescriptor.getDeclaredLength();
-    MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
+    MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
 
     final Interpreter.Options tfliteOptions = new Interpreter.Options();
     tfliteOptions.setNumThreads(numThreads);
     tfLite = new Interpreter(buffer, tfliteOptions);
 
     if (labelsPath.length() > 0) {
-      loadLabels(assetManager, labelsPath);
+      // loadLabels(assetManager, labelsPath);
+    } else {
+      labelProb = new float[1][outputSize];
     }
 
     callback.invoke(null, "success");
@@ -126,12 +124,12 @@ public class TfliteReactNativeModule extends ReactContextBaseJavaModule {
               }
             });
 
-    for (int i = 0; i < labels.size(); ++i) {
+    for (int i = 0; i < labelProb[0].length; ++i) {
       float confidence = labelProb[0][i];
       if (confidence > threshold) {
         WritableMap res = Arguments.createMap();
         res.putInt("index", i);
-        res.putString("label", labels.size() > i ? labels.get(i) : "unknown");
+        res.putString("label", labels != null && labels.size() > i ? labels.get(i) : "unknown");
         res.putDouble("confidence", confidence);
         pq.add(res);
       }

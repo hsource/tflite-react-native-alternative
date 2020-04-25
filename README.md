@@ -19,6 +19,15 @@ A React Native library for accessing TensorFlow Lite API. Supports Classificatio
 
 `$ npm install tflite-react-native-alternative --save`
 
+## Updates by Harry
+
+1. Changed the model to take a file-path, rather than an asset path in `loadModel`
+2. Added new parameter to `loadModel`: `outputSize` that allows the Android model to be run without any labels file
+3. Made iOS model build properly by changing the podspec to include TensorflowLite headers and to compile `.mm` (Objective-C++) files
+4. Made the iOS model also work without any labels
+
+Verified this worked with an Image Quality Analysis model.
+
 ## Add models to the project
 
 ### iOS

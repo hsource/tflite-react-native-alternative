@@ -1,6 +1,6 @@
 {
   "name": "tflite-react-native-alternative",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Updated version of tflite-react-native for personal use.",
   "main": "index.js",
   "scripts": {
@@ -16,11 +16,14 @@
   "author": "Leonam de Paula",
   "license": "MIT",
   "peerDependencies": {
-    "react-native": "^0.41.2"
+    "react-native": "^0.60.4"
   },
-  "repository" :
-  {
-    "type" : "git",
-    "url" : "https://github.com/leonamjlpaula/tflite-react-native-alternative.git"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leonamjlpaula/tflite-react-native-alternative.git"
+  },
+  "devDependencies": {
+    "@prettier/plugin-ruby": "^0.18.1",
+    "prettier": "^2.0.5"
   }
 }
