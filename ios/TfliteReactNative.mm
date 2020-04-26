@@ -31,7 +31,7 @@
 
 - (dispatch_queue_t)methodQueue
 {
-    return dispatch_get_main_queue();
+  return dispatch_get_main_queue();
 }
 
 RCT_EXPORT_MODULE()
@@ -175,9 +175,9 @@ NSMutableArray* GetTopN(const float* prediction, const unsigned long prediction_
     const int index = result.second;
     NSString* labelObject;
     if (index < labels.size()) {
-        labelObject = [NSString stringWithUTF8String:labels[index].c_str()];
+      labelObject = [NSString stringWithUTF8String:labels[index].c_str()];
     } else {
-        labelObject = @"unknown";
+      labelObject = @"unknown";
     }
     NSNumber* valueObject = [NSNumber numberWithFloat:confidence];
     NSMutableDictionary* res = [NSMutableDictionary dictionary];
@@ -216,7 +216,7 @@ RCT_EXPORT_METHOD(runModelOnImage:(NSString*)image_path
   if (output == NULL)
     callback(@[@"No output!"]);
   
-    const unsigned long output_size = 10; // TODO(Harry): Remove parameter
+  const unsigned long output_size = 10; // TODO(Harry): Remove parameter
   NSMutableArray* results = GetTopN(output, output_size, num_results, threshold);
   callback(@[[NSNull null], results]);
 }
@@ -516,21 +516,21 @@ RCT_EXPORT_METHOD(runSegmentationOnImage:(NSString*)image_path
 }
 
 NSArray* part_names = @[
-                        @"nose", @"leftEye", @"rightEye", @"leftEar", @"rightEar", @"leftShoulder",
-                        @"rightShoulder", @"leftElbow", @"rightElbow", @"leftWrist", @"rightWrist",
-                        @"leftHip", @"rightHip", @"leftKnee", @"rightKnee", @"leftAnkle", @"rightAnkle"
-                        ];
+  @"nose", @"leftEye", @"rightEye", @"leftEar", @"rightEar", @"leftShoulder",
+  @"rightShoulder", @"leftElbow", @"rightElbow", @"leftWrist", @"rightWrist",
+  @"leftHip", @"rightHip", @"leftKnee", @"rightKnee", @"leftAnkle", @"rightAnkle"
+];
 
 NSArray* pose_chain = @[
-                        @[@"nose", @"leftEye"], @[@"leftEye", @"leftEar"], @[@"nose", @"rightEye"],
-                        @[@"rightEye", @"rightEar"], @[@"nose", @"leftShoulder"],
-                        @[@"leftShoulder", @"leftElbow"], @[@"leftElbow", @"leftWrist"],
-                        @[@"leftShoulder", @"leftHip"], @[@"leftHip", @"leftKnee"],
-                        @[@"leftKnee", @"leftAnkle"], @[@"nose", @"rightShoulder"],
-                        @[@"rightShoulder", @"rightElbow"], @[@"rightElbow", @"rightWrist"],
-                        @[@"rightShoulder", @"rightHip"], @[@"rightHip", @"rightKnee"],
-                        @[@"rightKnee", @"rightAnkle"]
-                        ];
+  @[@"nose", @"leftEye"], @[@"leftEye", @"leftEar"], @[@"nose", @"rightEye"],
+  @[@"rightEye", @"rightEar"], @[@"nose", @"leftShoulder"],
+  @[@"leftShoulder", @"leftElbow"], @[@"leftElbow", @"leftWrist"],
+  @[@"leftShoulder", @"leftHip"], @[@"leftHip", @"leftKnee"],
+  @[@"leftKnee", @"leftAnkle"], @[@"nose", @"rightShoulder"],
+  @[@"rightShoulder", @"rightElbow"], @[@"rightElbow", @"rightWrist"],
+  @[@"rightShoulder", @"rightHip"], @[@"rightHip", @"rightKnee"],
+  @[@"rightKnee", @"rightAnkle"]
+];
 
 NSMutableDictionary* parts_ids = [NSMutableDictionary dictionary];
 NSMutableArray* parent_to_child_edges = [NSMutableArray array];
