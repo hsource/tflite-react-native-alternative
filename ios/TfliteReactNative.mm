@@ -2,6 +2,7 @@
 
 #import "TfliteReactNative.h"
 
+#import <PromisesObjC/FBLPromises.h>
 #import <UIKit/UIKit.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -11,12 +12,24 @@
 #include <sstream>
 #include <string>
 
+#if __has_include(<React/RCTBridgeModule.h>)
+#import <React/RCTBridgeModule.h>
+#import <React/RCTImageLoader.h>
+#import <React/RCTUtils.h>
+#else
+#import "RCTBridgeModule.h"
+#import "RCTImageLoader.h"
+#import "RCTUtils.h"
+#endif
+
 #ifdef CONTRIB_PATH
+#include "tensorflow/contrib/lite/error_reporter.h"
 #include "tensorflow/contrib/lite/kernels/register.h"
 #include "tensorflow/contrib/lite/model.h"
 #include "tensorflow/contrib/lite/op_resolver.h"
 #include "tensorflow/contrib/lite/string_util.h"
 #else
+#include "tensorflow/lite/error_reporter.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 #include "tensorflow/lite/op_resolver.h"
@@ -29,15 +42,37 @@
 
 @implementation TfliteReactNative
 
+@synthesize bridge = _bridge;
+
 - (dispatch_queue_t)methodQueue {
   return dispatch_get_main_queue();
 }
+
+class CustomErrorReporter : public tflite::ErrorReporter {
+ public:
+  NSError *lastError = NULL;
+  int Report(const char *format, va_list args) override {
+    NSString *errorMessage = [[NSString alloc] initWithFormat:[NSString stringWithUTF8String:format]
+                                                    arguments:args];
+
+    NSError *error = [NSError errorWithDomain:@"com.reactlibrary.TfliteReactNative"
+                                         code:0
+                                     userInfo:@{NSLocalizedDescriptionKey : errorMessage}];
+    this->lastError = error;
+    return 0;
+  }
+
+  ~CustomErrorReporter() override {
+    // Do nothing
+  }
+};
 
 RCT_EXPORT_MODULE()
 
 std::vector<std::string> labels;
 std::unique_ptr<tflite::FlatBufferModel> model;
 std::unique_ptr<tflite::Interpreter> interpreter;
+CustomErrorReporter errorReporter = CustomErrorReporter();
 
 static void LoadLabels(NSString *labels_path, std::vector<std::string> *label_strings) {
   if (!labels_path) {
@@ -58,10 +93,7 @@ RCT_EXPORT_METHOD(loadModel
                   : (int)num_threads outputSize
                   : (int)output_size callback
                   : (RCTResponseSenderBlock)callback) {
-  model = tflite::FlatBufferModel::BuildFromFile([model_file UTF8String]);
-  LOG(INFO) << "Loaded model " << model_file;
-  model->error_reporter();
-  LOG(INFO) << "resolved reporter";
+  model = tflite::FlatBufferModel::BuildFromFile([model_file UTF8String], &errorReporter);
 
   if (!model) {
     callback(@[ [NSString stringWithFormat:@"%s %@", "Failed to mmap model", model_file] ]);
@@ -143,6 +175,16 @@ void feedInputTensorImage(const NSString *image_path, float input_mean, float in
   feedInputTensor(in, input_size, image_height, image_width, image_channels, input_mean, input_std);
 }
 
+void feedInputTensorUIImage(UIImage *image, float input_mean, float input_std, int *input_size) {
+  int image_channels;
+  int image_height;
+  int image_width;
+  std::vector<uint8_t> image_data =
+      LoadImageFromUIImage(image, &image_width, &image_height, &image_channels);
+  uint8_t *in = image_data.data();
+  feedInputTensor(in, input_size, image_height, image_width, image_channels, input_mean, input_std);
+}
+
 NSMutableArray *GetTopN(const float *prediction, const unsigned long prediction_size,
                         const int num_results, const float threshold) {
   std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>,
@@ -194,32 +236,80 @@ NSMutableArray *GetTopN(const float *prediction, const unsigned long prediction_
 
 RCT_EXPORT_METHOD(runModelOnImage
                   : (NSString *)image_path mean
-                  : (float)input_mean std
+                  : (float)mean std
                   : (float)input_std numResults
                   : (int)num_results threshold
                   : (float)threshold callback
                   : (RCTResponseSenderBlock)callback) {
   if (!interpreter) {
-    NSLog(@"Failed to construct interpreter.");
-    callback(@[ @"Failed to construct interpreter." ]);
+    callback(@[ RCTMakeError(@"Model interpreter not available. Make sure loadModel was called",
+                             NULL, NULL) ]);
+    return;
   }
 
-  image_path = [image_path stringByReplacingOccurrencesOfString:@"file://" withString:@""];
-  int input_size;
-  feedInputTensorImage(image_path, input_mean, input_std, &input_size);
+  // Read the image using React Native's ImageLoader
+  FBLPromise<UIImage *> *imagePromise =
+      [FBLPromise async:^(FBLPromiseFulfillBlock fulfill, FBLPromiseRejectBlock reject) {
+        [[self.bridge moduleForName:@"ImageLoader" lazilyLoadIfNecessary:YES]
+            loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
+                           callback:^(NSError *error, UIImage *image) {
+                             if (error) {
+                               NSLog(@"image load fail");
+                               reject(error);
+                               return;
+                             }
 
-  if (interpreter->Invoke() != kTfLiteOk) {
-    NSLog(@"Failed to invoke!");
-    callback(@[ @"Failed to invoke!" ]);
-  }
+                             NSLog(@"image load success");
+                             fulfill(image);
+                           }];
+      }];
 
-  float *output = interpreter->typed_output_tensor<float>(0);
+  FBLPromise<UIImage *> *resultsPromise = [imagePromise then:^id(UIImage *image) {
+    // Resize the image
+    CGSize resizedSize = CGSizeMake(224, 224);
+    UIGraphicsBeginImageContextWithOptions(resizedSize, NO, 1.0);
+    [image drawInRect:CGRectMake(0, 0, resizedSize.width, resizedSize.height)];
+    NSLog(@"Made rect");
+    UIImage *resizedImage = UIGraphicsGetImageFromCurrentImageContext();
+    NSLog(@"Resized image");
+    UIGraphicsEndImageContext();
 
-  if (output == NULL) callback(@[ @"No output!" ]);
+    // Get raw pixels
+    int input_size = 0;  // Never used, but needed
+    feedInputTensorUIImage(resizedImage, mean, input_std, &input_size);
+    NSLog(@"Fed Tensor");
 
-  const unsigned long output_size = 10;  // TODO(Harry): Remove parameter
-  NSMutableArray *results = GetTopN(output, output_size, num_results, threshold);
-  callback(@[ [NSNull null], results ]);
+    // Run inference
+    if (interpreter->Invoke() != kTfLiteOk) {
+      NSLog(@"Invoke failed");
+      NSString *message =
+          errorReporter.lastError != NULL
+              ? [errorReporter.lastError.userInfo valueForKey:NSLocalizedDescriptionKey]
+              : @"Interpreter invocation failed 2";
+      return [NSError errorWithDomain:@"com.reactlibrary.TfliteReactNative"
+                                 code:0
+                             userInfo:@{NSLocalizedDescriptionKey : message}];
+    }
+
+    // Reformat the output
+    float *output = interpreter->typed_output_tensor<float>(0);
+    if (output == NULL) {
+      return [NSError errorWithDomain:@"com.reactlibrary.TfliteReactNative"
+                                 code:0
+                             userInfo:@{NSLocalizedDescriptionKey : @"Model output was null"}];
+    }
+    size_t output_size = sizeof(*output) / sizeof(float);
+
+    NSMutableArray *results = GetTopN(output, output_size, num_results, threshold);
+
+    callback(@[ [NSNull null], results ]);
+    return results;
+  }];
+
+  // Convert any errors to React Native errors
+  [resultsPromise catch:^(NSError *error) {
+    callback(@[ RCTMakeError([error.userInfo valueForKey:NSLocalizedDescriptionKey], NULL, NULL) ]);
+  }];
 }
 
 NSMutableArray *parseSSDMobileNet(float threshold, int num_results_per_class) {

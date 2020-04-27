@@ -66,3 +66,38 @@ std::vector<uint8_t> LoadImageFromFile(const char *file_name, int *out_width, in
   *out_channels = channels;
   return result;
 }
+
+// Save some typing for _Nonnull - see
+// https://stackoverflow.com/a/35148648/319066
+NS_ASSUME_NONNULL_BEGIN
+
+/** Gets a set of bytes for an UIImage. Each pixel is 4 bytes in the array, in
+ * order RGBA. */
+std::vector<uint8_t> LoadImageFromUIImage(UIImage *image, int *width, int *height, int *channels) {
+  CGImageRef cgImage = [image CGImage];
+
+  const size_t imageChannels = 4;
+  const size_t bitsPerComponent = 8;
+  const size_t imageWidth = CGImageGetWidth(cgImage);
+  const size_t imageHeight = CGImageGetHeight(cgImage);
+
+  const size_t bytesPerRow = imageWidth * imageChannels;
+  const size_t imageBytes = bytesPerRow * imageHeight;
+  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+
+  std::vector<uint8_t> data(imageBytes);
+
+  CGContextRef context =
+      CGBitmapContextCreate(data.data(), imageWidth, imageHeight, bitsPerComponent, bytesPerRow,
+                            colorSpace, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+
+  CGContextDrawImage(context, CGRectMake(0, 0, imageWidth, imageHeight), cgImage);
+  CGColorSpaceRelease(colorSpace);
+
+  *width = (int)imageWidth;
+  *height = (int)imageHeight;
+  *channels = (int)imageChannels;
+  return data;
+}
+
+NS_ASSUME_NONNULL_END
