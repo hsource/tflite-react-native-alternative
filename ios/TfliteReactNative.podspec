@@ -15,6 +15,7 @@ Pod::Spec.new do |s|
 
   s.dependency 'React'
   s.dependency 'TensorFlowLite'
+  s.dependency 'PromisesObjC'
 
   s.xcconfig = {
     'HEADER_SEARCH_PATHS' =>
