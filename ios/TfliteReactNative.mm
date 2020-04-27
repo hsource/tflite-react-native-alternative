@@ -73,6 +73,7 @@ std::vector<std::string> labels;
 std::unique_ptr<tflite::FlatBufferModel> model;
 std::unique_ptr<tflite::Interpreter> interpreter;
 CustomErrorReporter errorReporter = CustomErrorReporter();
+int outputSize = 0;
 
 static void LoadLabels(NSString *labels_path, std::vector<std::string> *label_strings) {
   if (!labels_path) {
@@ -102,6 +103,8 @@ RCT_EXPORT_METHOD(loadModel
   NSString *labels_path = [[NSBundle mainBundle] pathForResource:labels_file ofType:nil];
   if ([labels_path length] > 0) {
     LoadLabels(labels_path, &labels);
+  } else {
+    outputSize = output_size;
   }
 
   tflite::ops::builtin::BuiltinOpResolver resolver;
@@ -254,12 +257,10 @@ RCT_EXPORT_METHOD(runModelOnImage
             loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
                            callback:^(NSError *error, UIImage *image) {
                              if (error) {
-                               NSLog(@"image load fail");
                                reject(error);
                                return;
                              }
 
-                             NSLog(@"image load success");
                              fulfill(image);
                            }];
       }];
@@ -269,23 +270,19 @@ RCT_EXPORT_METHOD(runModelOnImage
     CGSize resizedSize = CGSizeMake(224, 224);
     UIGraphicsBeginImageContextWithOptions(resizedSize, NO, 1.0);
     [image drawInRect:CGRectMake(0, 0, resizedSize.width, resizedSize.height)];
-    NSLog(@"Made rect");
     UIImage *resizedImage = UIGraphicsGetImageFromCurrentImageContext();
-    NSLog(@"Resized image");
     UIGraphicsEndImageContext();
 
     // Get raw pixels
     int input_size = 0;  // Never used, but needed
     feedInputTensorUIImage(resizedImage, mean, input_std, &input_size);
-    NSLog(@"Fed Tensor");
 
     // Run inference
     if (interpreter->Invoke() != kTfLiteOk) {
-      NSLog(@"Invoke failed");
       NSString *message =
           errorReporter.lastError != NULL
               ? [errorReporter.lastError.userInfo valueForKey:NSLocalizedDescriptionKey]
-              : @"Interpreter invocation failed 2";
+              : @"Interpreter invocation failed";
       return [NSError errorWithDomain:@"com.reactlibrary.TfliteReactNative"
                                  code:0
                              userInfo:@{NSLocalizedDescriptionKey : message}];
@@ -298,9 +295,8 @@ RCT_EXPORT_METHOD(runModelOnImage
                                  code:0
                              userInfo:@{NSLocalizedDescriptionKey : @"Model output was null"}];
     }
-    size_t output_size = sizeof(*output) / sizeof(float);
 
-    NSMutableArray *results = GetTopN(output, output_size, num_results, threshold);
+    NSMutableArray *results = GetTopN(output, outputSize, num_results, threshold);
 
     callback(@[ [NSNull null], results ]);
     return results;
