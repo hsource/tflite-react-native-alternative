@@ -3,4 +3,3 @@
 @interface TfliteReactNative : NSObject <RCTBridgeModule>
 
 @end
-  
