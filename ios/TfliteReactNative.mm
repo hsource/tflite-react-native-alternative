@@ -45,7 +45,8 @@
 @synthesize bridge = _bridge;
 
 - (dispatch_queue_t)methodQueue {
-  return dispatch_get_main_queue();
+  // Run off the main queue to prevent blocking UI
+  return dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 }
 
 class CustomErrorReporter : public tflite::ErrorReporter {
@@ -250,6 +251,9 @@ RCT_EXPORT_METHOD(runModelOnImage
     return;
   }
 
+  // Use the default queue for all Promises
+  [FBLPromise setDefaultDispatchQueue:[self methodQueue]];
+
   // Read the image using React Native's ImageLoader
   FBLPromise<UIImage *> *imagePromise =
       [FBLPromise async:^(FBLPromiseFulfillBlock fulfill, FBLPromiseRejectBlock reject) {
@@ -266,16 +270,9 @@ RCT_EXPORT_METHOD(runModelOnImage
       }];
 
   FBLPromise<UIImage *> *resultsPromise = [imagePromise then:^id(UIImage *image) {
-    // Resize the image
-    CGSize resizedSize = CGSizeMake(224, 224);
-    UIGraphicsBeginImageContextWithOptions(resizedSize, NO, 1.0);
-    [image drawInRect:CGRectMake(0, 0, resizedSize.width, resizedSize.height)];
-    UIImage *resizedImage = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-
     // Get raw pixels
     int input_size = 0;  // Never used, but needed
-    feedInputTensorUIImage(resizedImage, mean, input_std, &input_size);
+    feedInputTensorUIImage(image, mean, input_std, &input_size);
 
     // Run inference
     if (interpreter->Invoke() != kTfLiteOk) {

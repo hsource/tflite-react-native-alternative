@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'TfliteReactNative'
-  s.version = '1.0.5'
+  s.version = '1.0.6'
   s.summary = 'TfliteReactNative'
   s.description = 'A React Native library for accessing TensorFlow Lite API. Supports Classification and Object Detection on both iOS and Android.'
   s.homepage = 'https://github.com/shaqian/tflite-react-native'
