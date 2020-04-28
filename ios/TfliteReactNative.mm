@@ -261,7 +261,14 @@ RCT_EXPORT_METHOD(runModelOnImage
             loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
                            callback:^(NSError *error, UIImage *image) {
                              if (error) {
-                               reject(error);
+                               NSString *errorMessage = [NSString
+                                   stringWithFormat:
+                                       @"Error loading file with parent domain %@ and code %ld",
+                                       error.domain, error.code];
+                               reject([NSError
+                                   errorWithDomain:@"com.reactlibrary.TfliteReactNative"
+                                              code:0
+                                          userInfo:@{NSLocalizedDescriptionKey : errorMessage}]);
                                return;
                              }
 
