@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'TfliteReactNative'
-  s.version = '1.0.7'
+  s.version = '1.0.8'
   s.summary = 'TfliteReactNative'
   s.description = 'A React Native library for accessing TensorFlow Lite API. Supports Classification and Object Detection on both iOS and Android.'
   s.homepage = 'https://github.com/shaqian/tflite-react-native'
@@ -15,7 +15,6 @@ Pod::Spec.new do |s|
 
   s.dependency 'React'
   s.dependency 'TensorFlowLite'
-  s.dependency 'PromisesObjC'
 
   s.xcconfig = {
     'HEADER_SEARCH_PATHS' =>

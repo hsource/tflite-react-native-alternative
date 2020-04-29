@@ -15,6 +15,10 @@ class Tflite {
   }
 
   runModelOnImage(args, callback) {
+    if (args['path'] === null) {
+      callback(new Error("Can't run model on image with null path"));
+    }
+
     TfliteReactNative.runModelOnImage(
       args['path'],
       args['imageMean'] != null ? args['imageMean'] : 127.5,

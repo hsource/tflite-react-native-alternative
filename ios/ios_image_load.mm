@@ -93,6 +93,7 @@ std::vector<uint8_t> LoadImageFromUIImage(UIImage *image, int *width, int *heigh
 
   CGContextDrawImage(context, CGRectMake(0, 0, imageWidth, imageHeight), cgImage);
   CGColorSpaceRelease(colorSpace);
+  CGContextRelease(context);
 
   *width = (int)imageWidth;
   *height = (int)imageHeight;

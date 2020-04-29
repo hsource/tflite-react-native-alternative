@@ -2,7 +2,6 @@
 
 #import "TfliteReactNative.h"
 
-#import <PromisesObjC/FBLPromises.h>
 #import <UIKit/UIKit.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -46,7 +45,7 @@
 
 - (dispatch_queue_t)methodQueue {
   // Run off the main queue to prevent blocking UI
-  return dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+  return dispatch_queue_create("com.reactlibrary.TfliteReactNative", DISPATCH_QUEUE_SERIAL);
 }
 
 class CustomErrorReporter : public tflite::ErrorReporter {
@@ -251,65 +250,42 @@ RCT_EXPORT_METHOD(runModelOnImage
     return;
   }
 
-  // Use the default queue for all Promises
-  [FBLPromise setDefaultDispatchQueue:[self methodQueue]];
+  // Main block. We assign it to a variable to make the code less indented
+  // than if we just defined it in the callback below
+  void (^runModelOnUIImage)(NSError *, UIImage *) = ^(NSError *error, UIImage *image) {
+    if (error) {
+      callback(@[ RCTMakeError(
+          [NSString stringWithFormat:@"Error loading file with parent domain %@ and code %ld",
+                                     error.domain, error.code],
+          NULL, NULL) ]);
+      return;
+    }
 
-  // Read the image using React Native's ImageLoader
-  FBLPromise<UIImage *> *imagePromise =
-      [FBLPromise async:^(FBLPromiseFulfillBlock fulfill, FBLPromiseRejectBlock reject) {
-        [[self.bridge moduleForName:@"ImageLoader" lazilyLoadIfNecessary:YES]
-            loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
-                           callback:^(NSError *error, UIImage *image) {
-                             if (error) {
-                               NSString *errorMessage = [NSString
-                                   stringWithFormat:
-                                       @"Error loading file with parent domain %@ and code %ld",
-                                       error.domain, error.code];
-                               reject([NSError
-                                   errorWithDomain:@"com.reactlibrary.TfliteReactNative"
-                                              code:0
-                                          userInfo:@{NSLocalizedDescriptionKey : errorMessage}]);
-                               return;
-                             }
-
-                             fulfill(image);
-                           }];
-      }];
-
-  FBLPromise<UIImage *> *resultsPromise = [imagePromise then:^id(UIImage *image) {
     // Get raw pixels
     int input_size = 0;  // Never used, but needed
     feedInputTensorUIImage(image, mean, input_std, &input_size);
 
     // Run inference
     if (interpreter->Invoke() != kTfLiteOk) {
-      NSString *message =
-          errorReporter.lastError != NULL
-              ? [errorReporter.lastError.userInfo valueForKey:NSLocalizedDescriptionKey]
-              : @"Interpreter invocation failed";
-      return [NSError errorWithDomain:@"com.reactlibrary.TfliteReactNative"
-                                 code:0
-                             userInfo:@{NSLocalizedDescriptionKey : message}];
+      callback(@[ RCTMakeError(@"Interpreter invocation failed", NULL, NULL) ]);
+      return;
     }
 
     // Reformat the output
     float *output = interpreter->typed_output_tensor<float>(0);
     if (output == NULL) {
-      return [NSError errorWithDomain:@"com.reactlibrary.TfliteReactNative"
-                                 code:0
-                             userInfo:@{NSLocalizedDescriptionKey : @"Model output was null"}];
+      callback(@[ RCTMakeError(@"Model output was null", NULL, NULL) ]);
+      return;
     }
 
     NSMutableArray *results = GetTopN(output, outputSize, num_results, threshold);
-
     callback(@[ [NSNull null], results ]);
-    return results;
-  }];
+  };
 
-  // Convert any errors to React Native errors
-  [resultsPromise catch:^(NSError *error) {
-    callback(@[ RCTMakeError([error.userInfo valueForKey:NSLocalizedDescriptionKey], NULL, NULL) ]);
-  }];
+  // Read the image using React Native's ImageLoader
+  [[self.bridge moduleForName:@"ImageLoader"
+        lazilyLoadIfNecessary:YES] loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
+                                                  callback:runModelOnUIImage];
 }
 
 NSMutableArray *parseSSDMobileNet(float threshold, int num_results_per_class) {
