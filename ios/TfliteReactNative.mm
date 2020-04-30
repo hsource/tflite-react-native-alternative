@@ -282,10 +282,25 @@ RCT_EXPORT_METHOD(runModelOnImage
     callback(@[ [NSNull null], results ]);
   };
 
+  // Copied from feedTensorInputUIImage, this gets the width/height
+  int input = interpreter->inputs()[0];
+  TfLiteTensor *input_tensor = interpreter->tensor(input);
+  const int width = input_tensor->dims->data[2];
+  const int height = input_tensor->dims->data[1];
+
   // Read the image using React Native's ImageLoader
-  [[self.bridge moduleForName:@"ImageLoader"
-        lazilyLoadIfNecessary:YES] loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
-                                                  callback:runModelOnUIImage];
+  [[self.bridge moduleForName:@"ImageLoader" lazilyLoadIfNecessary:YES]
+      // Based on
+      // https://github.com/facebook/react-native/blob/03bd7d799ef569b5c3a0fedfd229a1c6b0f0377f/Libraries/Image/RCTImageLoader.mm#L315-L322
+      // and https://github.com/pxpeterxu/react-native-image-resizer/blob/v1.2.1-peter.5/ios/RCTImageResizer/RCTImageResizer.m#L419
+      loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
+                         size:CGSizeMake(width, height)
+                        scale:1
+                      clipped:true
+                   resizeMode:RCTResizeModeStretch
+                progressBlock:nil
+             partialLoadBlock:nil
+              completionBlock:runModelOnUIImage];
 }
 
 NSMutableArray *parseSSDMobileNet(float threshold, int num_results_per_class) {
