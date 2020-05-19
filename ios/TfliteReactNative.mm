@@ -237,6 +237,39 @@ NSMutableArray *GetTopN(const float *prediction, const unsigned long prediction_
   return predictions;
 }
 
+NSMutableArray *getOutputs(NSString **error) {
+  auto &outputs = interpreter->outputs();
+  NSMutableArray *returnOutputs = [NSMutableArray arrayWithCapacity:outputs.size()];
+
+  for (int outputIndex = 0; outputIndex < outputs.size(); outputIndex++) {
+    int output = outputs[outputIndex];
+
+    const TfLiteTensor *tensor = interpreter->tensor(output);
+    if (tensor->dims->size != 2) {
+      *error = @"Only 1-dimensional outputs are supported";
+      return NULL;
+    } else if (tensor->dims->data[0] != 1) {
+      *error = @"Unexpectedly got multiple outputs for single input";
+      return NULL;
+    } else if (tensor->type != kTfLiteFloat32) {
+      *error = @"Only Float32 output arrays are supported";
+      return NULL;
+    }
+
+    int outputSize = tensor->dims->data[1];
+    NSMutableArray *outputArray = [NSMutableArray arrayWithCapacity:outputSize];
+
+    const float *outputData = interpreter->typed_output_tensor<float>(outputIndex);
+    for (int indexInOutput = 0; indexInOutput < outputSize; indexInOutput++) {
+      [outputArray addObject:[NSNumber numberWithFloat:outputData[indexInOutput]]];
+    }
+
+    [returnOutputs addObject:outputArray];
+  }
+
+  return returnOutputs;
+}
+
 RCT_EXPORT_METHOD(runModelOnImage
                   : (NSString *)image_path mean
                   : (float)mean std
@@ -245,19 +278,19 @@ RCT_EXPORT_METHOD(runModelOnImage
                   : (float)threshold callback
                   : (RCTResponseSenderBlock)callback) {
   if (!interpreter) {
-    callback(@[ RCTMakeError(@"Model interpreter not available. Make sure loadModel was called",
-                             NULL, NULL) ]);
+    callback(@[ @"Model interpreter not available. Make sure loadModel was called" ]);
     return;
   }
+
+  const std::vector<int> outputs = interpreter->outputs();
 
   // Main block. We assign it to a variable to make the code less indented
   // than if we just defined it in the callback below
   void (^runModelOnUIImage)(NSError *, UIImage *) = ^(NSError *error, UIImage *image) {
     if (error) {
-      callback(@[ RCTMakeError(
-          [NSString stringWithFormat:@"Error loading file with parent domain %@ and code %ld",
-                                     error.domain, error.code],
-          NULL, NULL) ]);
+      callback(
+          @[ [NSString stringWithFormat:@"Error loading file with parent domain %@ and code %ld",
+                                        error.domain, error.code] ]);
       return;
     }
 
@@ -267,18 +300,18 @@ RCT_EXPORT_METHOD(runModelOnImage
 
     // Run inference
     if (interpreter->Invoke() != kTfLiteOk) {
-      callback(@[ RCTMakeError(@"Interpreter invocation failed", NULL, NULL) ]);
+      callback(@[ @"Interpreter invocation failed" ]);
       return;
     }
 
-    // Reformat the output
-    float *output = interpreter->typed_output_tensor<float>(0);
-    if (output == NULL) {
-      callback(@[ RCTMakeError(@"Model output was null", NULL, NULL) ]);
+    // Reformat the output into a NSMutableArray
+    NSString *getOutputsError = NULL;
+    NSMutableArray *results = getOutputs(&getOutputsError);
+    if (getOutputsError != NULL) {
+      callback(@[ getOutputsError ]);
       return;
     }
 
-    NSMutableArray *results = GetTopN(output, outputSize, num_results, threshold);
     callback(@[ [NSNull null], results ]);
   };
 
@@ -292,7 +325,8 @@ RCT_EXPORT_METHOD(runModelOnImage
   [[self.bridge moduleForName:@"ImageLoader" lazilyLoadIfNecessary:YES]
       // Based on
       // https://github.com/facebook/react-native/blob/03bd7d799ef569b5c3a0fedfd229a1c6b0f0377f/Libraries/Image/RCTImageLoader.mm#L315-L322
-      // and https://github.com/pxpeterxu/react-native-image-resizer/blob/v1.2.1-peter.5/ios/RCTImageResizer/RCTImageResizer.m#L419
+      // and
+      // https://github.com/pxpeterxu/react-native-image-resizer/blob/v1.2.1-peter.5/ios/RCTImageResizer/RCTImageResizer.m#L419
       loadImageWithURLRequest:[RCTConvert NSURLRequest:image_path]
                          size:CGSizeMake(width, height)
                         scale:1

@@ -227,9 +227,37 @@ public class TfliteReactNativeModule extends ReactContextBaseJavaModule {
   private void runModelOnImage(final String path, final float mean, final float std, final int numResults,
                                final float threshold, final Callback callback) throws IOException {
 
+    Object[] inputs = { feedInputTensorImage(path, mean, std) };
+    Map<Integer, Object> outputs = new HashMap();
+
+    for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {
+      Tensor tensor = tfLite.getOutputTensor(outputIndex);
+      if (tensor.numDimensions() != 2) {
+        callback.invoke("Only output tensors with 2 dimensions are supported", null);
+        return;
+      } else if (tensor.shape()[0] != 1) {
+        callback.invoke("Only 1 output can be processed at a time right now", null);
+        return;
+      } else if (tensor.dataType() != DataType.FLOAT32) {
+        callback.invoke("Only FLOAT32 output tensors are supported", null);
+        return;
+      }
+
+      int outputSize = tensor.shape()[1];
+      outputs.put(outputIndex, new float[1][outputSize]);
+    }
+
+    tfLite.runForMultipleInputsOutputs(inputs, outputs);
     tfLite.run(feedInputTensorImage(path, mean, std), labelProb);
 
-    callback.invoke(null, GetTopN(numResults, threshold)); }
+    WritableArray rnOutputs = Arguments.createArray();
+    for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {
+      float[][] output = (float[][]) outputs.get(outputIndex);
+      rnOutputs.pushArray(Arguments.fromArray(output[0]));
+    }
+
+    callback.invoke(null, rnOutputs);
+  }
 
 
   @ReactMethod
