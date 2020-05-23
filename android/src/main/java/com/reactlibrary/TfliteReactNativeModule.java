@@ -8,14 +8,17 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Canvas;
+import android.os.AsyncTask;
+import android.os.Process;
 import android.util.Base64;
 import android.util.Log;
 
 import com.facebook.react.bridge.Arguments;
+import com.facebook.react.bridge.Callback;
+import com.facebook.react.bridge.GuardedAsyncTask;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
-import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
@@ -225,38 +228,53 @@ public class TfliteReactNativeModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   private void runModelOnImage(final String path, final float mean, final float std, final int numResults,
-                               final float threshold, final Callback callback) throws IOException {
+                               final float threshold, final Callback callback) {
+    // Run in a background thread at a lower priority for less
+    // performance impact on the UI thread
+    new GuardedAsyncTask<Void, Void>(getReactApplicationContext()) {
+      @Override
+      protected void doInBackgroundGuarded(Void... params) {
+        try {
+          Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+          Object[] inputs = { feedInputTensorImage(path, mean, std) };
+          Map<Integer, Object> outputs = new HashMap();
 
-    Object[] inputs = { feedInputTensorImage(path, mean, std) };
-    Map<Integer, Object> outputs = new HashMap();
+          for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {
+            Tensor tensor = tfLite.getOutputTensor(outputIndex);
+            if (tensor.numDimensions() != 2) {
+              callback.invoke("Only output tensors with 2 dimensions are supported", null);
+              return;
+            } else if (tensor.shape()[0] != 1) {
+              callback.invoke("Only 1 output can be processed at a time right now", null);
+              return;
+            } else if (tensor.dataType() != DataType.FLOAT32) {
+              callback.invoke("Only FLOAT32 output tensors are supported", null);
+              return;
+            }
 
-    for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {
-      Tensor tensor = tfLite.getOutputTensor(outputIndex);
-      if (tensor.numDimensions() != 2) {
-        callback.invoke("Only output tensors with 2 dimensions are supported", null);
-        return;
-      } else if (tensor.shape()[0] != 1) {
-        callback.invoke("Only 1 output can be processed at a time right now", null);
-        return;
-      } else if (tensor.dataType() != DataType.FLOAT32) {
-        callback.invoke("Only FLOAT32 output tensors are supported", null);
-        return;
+            int outputSize = tensor.shape()[1];
+            outputs.put(outputIndex, new float[1][outputSize]);
+          }
+
+          tfLite.runForMultipleInputsOutputs(inputs, outputs);
+          tfLite.run(feedInputTensorImage(path, mean, std), labelProb);
+
+          WritableArray rnOutputs = Arguments.createArray();
+          for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {
+            float[][] output = (float[][]) outputs.get(outputIndex);
+            rnOutputs.pushArray(Arguments.fromArray(output[0]));
+          }
+
+          callback.invoke(null, rnOutputs);
+        } catch (IOException e) {
+          // Create an error based on how AsyncStorageErrorUtil does it:
+          // https://github.com/facebook/react-native/blob/aee88b6843cea63d6aa0b5879ad6ef9da4701846/ReactAndroid/src/main/java/com/facebook/react/modules/storage/AsyncStorageErrorUtil.java
+          WritableMap errorMap = Arguments.createMap();
+          errorMap.putString("message", e.getMessage());
+          callback.invoke(errorMap);
+        }
       }
-
-      int outputSize = tensor.shape()[1];
-      outputs.put(outputIndex, new float[1][outputSize]);
-    }
-
-    tfLite.runForMultipleInputsOutputs(inputs, outputs);
-    tfLite.run(feedInputTensorImage(path, mean, std), labelProb);
-
-    WritableArray rnOutputs = Arguments.createArray();
-    for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {
-      float[][] output = (float[][]) outputs.get(outputIndex);
-      rnOutputs.pushArray(Arguments.fromArray(output[0]));
-    }
-
-    callback.invoke(null, rnOutputs);
+    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
   }
 
 

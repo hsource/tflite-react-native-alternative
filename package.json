@@ -1,6 +1,6 @@
 {
   "name": "tflite-react-native-alternative",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Updated version of tflite-react-native for personal use.",
   "main": "index.js",
   "scripts": {

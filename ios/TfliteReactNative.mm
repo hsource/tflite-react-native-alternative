@@ -44,8 +44,16 @@
 @synthesize bridge = _bridge;
 
 - (dispatch_queue_t)methodQueue {
-  // Run off the main queue to prevent blocking UI
-  return dispatch_queue_create("com.reactlibrary.TfliteReactNative", DISPATCH_QUEUE_SERIAL);
+    if (@available(iOS 8.0, *)) {
+        // Run with a lower priority if supported by the iOS version
+        dispatch_queue_attr_t queueAttributes =
+            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,
+                                                    QOS_CLASS_UTILITY,
+                                                    0);
+        return dispatch_queue_create("com.reactlibrary.TfliteReactNative", queueAttributes);
+    } else {
+        return dispatch_queue_create("com.reactlibrary.TfliteReactNative", DISPATCH_QUEUE_SERIAL);
+    }
 }
 
 class CustomErrorReporter : public tflite::ErrorReporter {
