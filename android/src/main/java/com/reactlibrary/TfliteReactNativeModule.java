@@ -257,7 +257,6 @@ public class TfliteReactNativeModule extends ReactContextBaseJavaModule {
           }
 
           tfLite.runForMultipleInputsOutputs(inputs, outputs);
-          tfLite.run(feedInputTensorImage(path, mean, std), labelProb);
 
           WritableArray rnOutputs = Arguments.createArray();
           for (int outputIndex = 0; outputIndex < tfLite.getOutputTensorCount(); outputIndex++) {

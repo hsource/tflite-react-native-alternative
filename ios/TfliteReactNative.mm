@@ -278,15 +278,36 @@ NSMutableArray *getOutputs(NSString **error) {
   return returnOutputs;
 }
 
+// We use a NSLock to lock `runModelOnImage` so that only one image is
+// processed at a time.
+//
+// Although only one call of `runModelOnImage` can run at a time thanks to the
+// serial `methodQueue` declaration above, the callback block
+// `runModelOnUIImage` is run in a parallel thread by ImageLoader.mm:
+// https://github.com/facebook/react-native/blob/v0.62.2/Libraries/Image/RCTImageLoader.mm#L455
+//
+// The methodQueue would immediately run the next task, and may accumulate
+// many decoded images that aren't processed yet. That can take up a lot of
+// memory. We avoid this with the lock.
+NSLock* runModelOnImageLock = [[NSLock alloc] init];
+
 RCT_EXPORT_METHOD(runModelOnImage
                   : (NSString *)image_path mean
                   : (float)mean std
                   : (float)input_std numResults
                   : (int)num_results threshold
                   : (float)threshold callback
-                  : (RCTResponseSenderBlock)callback) {
+                  : (RCTResponseSenderBlock)callbackDoNotCallUseCallbackWithUnlockInstead) {
+  [runModelOnImageLock lock];
+  
+  // Wrapped callback to guarantee releasing the lock when we call it
+  void (^callbackWithUnlock)(NSArray *response) = ^(NSArray *response) {
+    callbackDoNotCallUseCallbackWithUnlockInstead(response);
+    [runModelOnImageLock unlock];
+  };
+  
   if (!interpreter) {
-    callback(@[ @"Model interpreter not available. Make sure loadModel was called" ]);
+    callbackWithUnlock(@[ @"Model interpreter not available. Make sure loadModel was called" ]);
     return;
   }
 
@@ -295,32 +316,34 @@ RCT_EXPORT_METHOD(runModelOnImage
   // Main block. We assign it to a variable to make the code less indented
   // than if we just defined it in the callback below
   void (^runModelOnUIImage)(NSError *, UIImage *) = ^(NSError *error, UIImage *image) {
-    if (error) {
-      callback(
-          @[ [NSString stringWithFormat:@"Error loading file with parent domain %@ and code %ld",
-                                        error.domain, error.code] ]);
-      return;
-    }
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^(){
+      if (error) {
+        callbackWithUnlock(
+            @[ [NSString stringWithFormat:@"Error loading file with parent domain %@ and code %ld",
+                                          error.domain, error.code] ]);
+        return;
+      }
 
-    // Get raw pixels
-    int input_size = 0;  // Never used, but needed
-    feedInputTensorUIImage(image, mean, input_std, &input_size);
+      // Get raw pixels
+      int input_size = 0;  // Never used, but needed
+      feedInputTensorUIImage(image, mean, input_std, &input_size);
 
-    // Run inference
-    if (interpreter->Invoke() != kTfLiteOk) {
-      callback(@[ @"Interpreter invocation failed" ]);
-      return;
-    }
+      // Run inference
+      if (interpreter->Invoke() != kTfLiteOk) {
+        callbackWithUnlock(@[ @"Interpreter invocation failed" ]);
+        return;
+      }
 
-    // Reformat the output into a NSMutableArray
-    NSString *getOutputsError = NULL;
-    NSMutableArray *results = getOutputs(&getOutputsError);
-    if (getOutputsError != NULL) {
-      callback(@[ getOutputsError ]);
-      return;
-    }
+      // Reformat the output into a NSMutableArray
+      NSString *getOutputsError = NULL;
+      NSMutableArray *results = getOutputs(&getOutputsError);
+      if (getOutputsError != NULL) {
+        callbackWithUnlock(@[ getOutputsError ]);
+        return;
+      }
 
-    callback(@[ [NSNull null], results ]);
+      callbackWithUnlock(@[ [NSNull null], results ]);
+    });
   };
 
   // Copied from feedTensorInputUIImage, this gets the width/height
